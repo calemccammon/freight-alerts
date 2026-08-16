@@ -28,7 +28,22 @@ jobs:
           go-version: '1.25'
           cache: true
 
+      # Without this guard the schedule starts firing the moment the repo exists
+      # and fails every 15 minutes until a database is configured -- 96 failure
+      # notifications a day for a service nobody has finished setting up yet.
+      # Skipping cleanly means the workflow is ready and silent until it is real.
+      - name: Check the database is configured
+        id: config
+        run: |
+          if [ -z "${{ secrets.DATABASE_URL }}" ]; then
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::DATABASE_URL secret is not set; skipping the poll. Add it in Settings → Secrets to activate."
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Run one poll cycle
+        if: steps.config.outputs.configured == 'true'
         run: go run ./cmd/freightalerts poll
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
