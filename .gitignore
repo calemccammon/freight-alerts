@@ -1,0 +1,7 @@
+# Build output
+/freightalerts
+/freightalerts.exe
+/bin/
+
+# Local environment
+.env

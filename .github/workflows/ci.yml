@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    # The store package's tests exercise the schema itself -- the ON CONFLICT
+    # suppression, the CHECK constraints, the cascades -- so they run against a
+    # real Postgres rather than a fake that would only prove the fake works.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: freight_alerts_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Verify formatting
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "::error::gofmt needed on: $unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -count=1 ./...
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/freight_alerts_test?sslmode=disable
+
+      - name: Build
+        run: go build -o /tmp/freightalerts ./cmd/freightalerts
+
+      # Proves the binary and the schema agree, without needing a deployment.
+      - name: Migrate against a real database
+        run: /tmp/freightalerts migrate
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/freight_alerts_test?sslmode=disable

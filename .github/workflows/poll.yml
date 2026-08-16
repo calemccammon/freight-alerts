@@ -1,0 +1,34 @@
+name: Poll
+
+# The scheduler lives here rather than inside the process. That is the whole
+# reason this service needs no always-on host: nothing runs between cycles.
+on:
+  schedule:
+    # Every 15 minutes. GitHub's cron is best-effort and can be late under load,
+    # which is fine -- a delayed train is still delayed on the next cycle, and
+    # the UNIQUE constraint means a late or duplicated run cannot double-notify.
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  # Overlapping runs would still be safe (the database enforces suppression),
+  # but there is no reason to pay for them.
+  group: poll
+  cancel-in-progress: false
+
+jobs:
+  poll:
+    name: Poll Digitraffic and alert
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+
+      - name: Run one poll cycle
+        run: go run ./cmd/freightalerts poll
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
