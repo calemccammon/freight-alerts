@@ -31,9 +31,19 @@ type Store interface {
 	ListAlerts(ctx context.Context, userID int64, limit int) ([]store.Alert, error)
 }
 
+// OAuth is the sign-in provider, declared here at the consumer for the same
+// reason Store is: these three methods are the entire dependency. Testing
+// against a fake keeps the sign-in path exercisable without an HTTP stub, and
+// without the production type needing a way to be repointed at another host.
+type OAuth interface {
+	Configured() bool
+	AuthorizeURL(state string) string
+	Exchange(ctx context.Context, code string) (auth.Identity, error)
+}
+
 type Server struct {
 	store  Store
-	github *auth.GitHub
+	github OAuth
 	log    *slog.Logger
 	// secure controls the cookie Secure flag; off only when running locally
 	// over plain http.
@@ -44,7 +54,7 @@ type Server struct {
 	allow Allowlist
 }
 
-func New(s Store, gh *auth.GitHub, log *slog.Logger, secure bool, allow Allowlist) *Server {
+func New(s Store, gh OAuth, log *slog.Logger, secure bool, allow Allowlist) *Server {
 	return &Server{store: s, github: gh, log: log, secure: secure, allow: allow}
 }
 

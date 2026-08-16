@@ -49,9 +49,11 @@ Each of those is a named test in `internal/store/store_test.go`.
   repo useless to anyone who cloned it. That default is load-bearing for a public
   repo, so `serve` warns at startup when it applies. If you ever make it
   fail-closed, delete that warning too, or it will lie.
-- `auth.GitHub.SetEndpoints` exists **only** so tests outside the `auth` package
-  can run the sign-in path against a stub. Never call it in production code:
-  repointing those URLs sends client credentials to another host.
+- **Do not add a way to repoint `auth.GitHub`'s OAuth URLs from outside the
+  package.** The `api` package depends on the `OAuth` interface it declares, so
+  the sign-in path is testable with a fake and the production type needs no
+  seam. An exported setter would be a way to send client credentials to another
+  host, in exchange for nothing.
 
 ## Data licence
 

@@ -41,17 +41,6 @@ func NewGitHub(clientID, clientSecret, redirectURL string) *GitHub {
 	}
 }
 
-// SetEndpoints repoints the OAuth flow at another host.
-//
-// FOR TESTS ONLY. Tests inside this package set the unexported fields
-// directly; this exists so tests in *other* packages can exercise the whole
-// sign-in path -- notably that an allowlist refusal happens before any user
-// row is written -- against a stub server. Production code must never call it:
-// repointing these URLs would send client credentials to another host.
-func (g *GitHub) SetEndpoints(authorize, token, user string) {
-	g.authorizeURL, g.tokenURL, g.userURL = authorize, token, user
-}
-
 // Configured reports whether sign-in is possible. The service still runs
 // without credentials -- the poller does not need them -- so this lets the API
 // return a clear error instead of a broken redirect.

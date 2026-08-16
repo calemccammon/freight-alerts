@@ -1,7 +1,7 @@
 package api
 
 import (
-	"encoding/json"
+	"context"
 	"io"
 	"log/slog"
 	"net/http"
@@ -70,23 +70,21 @@ func TestAValueWithNoUsableEntriesIsOpenRatherThanClosed(t *testing.T) {
 	}
 }
 
-// githubStub stands in for GitHub's token and user endpoints so the whole
-// sign-in path can run without network access.
-func githubStub(t *testing.T, login string) *auth.GitHub {
-	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/token", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"access_token":"gho_test"}`))
-	})
-	mux.HandleFunc("/user", func(w http.ResponseWriter, _ *http.Request) {
-		_ = json.NewEncoder(w).Encode(map[string]any{"id": 4242, "login": login})
-	})
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
+// fakeOAuth resolves to a fixed identity. The api package depends on three
+// methods of the sign-in provider, so a fake covers the whole callback path
+// without an HTTP stub -- and without the real client needing a way to be
+// pointed somewhere else. The genuine token exchange is tested in the auth
+// package, against its own server, where it belongs.
+type fakeOAuth struct{ login string }
 
-	gh := auth.NewGitHub("id", "secret", "https://x.test/cb")
-	gh.SetEndpoints(srv.URL+"/authorize", srv.URL+"/token", srv.URL+"/user")
-	return gh
+func (fakeOAuth) Configured() bool { return true }
+
+func (fakeOAuth) AuthorizeURL(state string) string {
+	return "https://github.test/login/oauth/authorize?state=" + state
+}
+
+func (f fakeOAuth) Exchange(context.Context, string) (auth.Identity, error) {
+	return auth.Identity{ID: 4242, Login: f.login}, nil
 }
 
 // callbackAs runs a complete OAuth callback for login against an allowlist.
@@ -94,7 +92,7 @@ func callbackAs(t *testing.T, allow Allowlist, login string) (*httptest.Response
 	t.Helper()
 	fs := newFakeStore()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	h := New(fs, githubStub(t, login), log, false, allow).Routes()
+	h := New(fs, fakeOAuth{login: login}, log, false, allow).Routes()
 
 	// The callback verifies state against a cookie, so mint a matching pair.
 	stateRec := httptest.NewRecorder()
