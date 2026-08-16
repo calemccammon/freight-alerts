@@ -76,6 +76,8 @@ Environment:
   GITHUB_CLIENT_ID       serve: OAuth app client id
   GITHUB_CLIENT_SECRET   serve: OAuth app client secret
   GITHUB_REDIRECT_URL    serve: callback URL registered with the OAuth app
+  ALLOWED_LOGINS         serve: comma-separated GitHub logins permitted to
+                         sign in; unset means any GitHub account may
   INSECURE_COOKIES       serve: set to 1 for local http development
 `)
 }
@@ -173,8 +175,18 @@ func runServe(ctx context.Context, log *slog.Logger) error {
 		log.Warn("GitHub OAuth is not configured; sign-in will return 503")
 	}
 
+	// Logged at startup because an unset or mistyped ALLOWED_LOGINS opens
+	// sign-in to any GitHub account, and that must be visible in the logs
+	// rather than discovered later from an unexpected user row.
+	allow := api.ParseAllowlist(os.Getenv("ALLOWED_LOGINS"))
+	if allow.Open() {
+		log.Warn("ALLOWED_LOGINS is not set; sign-in is open to any GitHub account")
+	} else {
+		log.Info("sign-in restricted", "permitted_logins", allow.Size())
+	}
+
 	secure := os.Getenv("INSECURE_COOKIES") != "1"
-	handler := api.New(s, github, log, secure).Routes()
+	handler := api.New(s, github, log, secure, allow).Routes()
 
 	port := os.Getenv("PORT")
 	if port == "" {

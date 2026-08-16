@@ -38,10 +38,14 @@ type Server struct {
 	// secure controls the cookie Secure flag; off only when running locally
 	// over plain http.
 	secure bool
+	// allow gates sign-in. Every authenticated route requires a session, and a
+	// session is only ever created in callback, so this one check is the whole
+	// of the access policy rather than something each handler repeats.
+	allow Allowlist
 }
 
-func New(s Store, gh *auth.GitHub, log *slog.Logger, secure bool) *Server {
-	return &Server{store: s, github: gh, log: log, secure: secure}
+func New(s Store, gh *auth.GitHub, log *slog.Logger, secure bool, allow Allowlist) *Server {
+	return &Server{store: s, github: gh, log: log, secure: secure, allow: allow}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -143,6 +147,13 @@ func (s *Server) login(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, s.github.AuthorizeURL(state), http.StatusFound)
 }
 
+// allowlistRefusal explains a refusal rather than merely stating one. This
+// endpoint is reached by a browser redirect, so a bare 403 would read as a
+// broken deployment instead of a deliberate policy.
+const allowlistRefusal = "This instance is limited to its owner. " +
+	"The source and API documentation are at " +
+	"https://github.com/calemccammon/freight-alerts"
+
 func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 	if !s.github.Configured() {
 		writeError(w, http.StatusServiceUnavailable, "GitHub sign-in is not configured")
@@ -164,6 +175,14 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.log.Warn("oauth exchange failed", "err", err)
 		writeError(w, http.StatusBadGateway, "GitHub sign-in failed")
+		return
+	}
+
+	if !s.allow.Permits(identity.Login) {
+		// Refused before UpsertUser, so a rejected sign-in leaves no user row
+		// behind to be cleaned up later.
+		s.log.Info("sign-in refused", "login", identity.Login)
+		writeError(w, http.StatusForbidden, allowlistRefusal)
 		return
 	}
 

@@ -39,6 +39,19 @@ Each of those is a named test in `internal/store/store_test.go`.
   nothing in their account. Do not add scopes without a concrete need.
 - Rule and alert queries are scoped by `user_id`. A missing scope is a data leak,
   not a bug — `TestOneUserCannotDeleteAnothersRule` guards the delete path.
+- **`ALLOWED_LOGINS` is the whole access policy**, and it works because the check
+  sits in the OAuth callback: every authenticated route requires a session, and
+  `callback` is the only place a session is minted. Keep it that way — a new
+  route that creates a session another way would bypass it silently. The refusal
+  must stay *before* `UpsertUser` so a rejected sign-in leaves no user row;
+  `TestARefusedLoginGetsA403AndCreatesNoUser` pins that ordering.
+- **An unset allowlist is open, deliberately** — a hard-coded list would make the
+  repo useless to anyone who cloned it. That default is load-bearing for a public
+  repo, so `serve` warns at startup when it applies. If you ever make it
+  fail-closed, delete that warning too, or it will lie.
+- `auth.GitHub.SetEndpoints` exists **only** so tests outside the `auth` package
+  can run the sign-in path against a stub. Never call it in production code:
+  repointing those URLs sends client credentials to another host.
 
 ## Data licence
 
