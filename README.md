@@ -4,6 +4,19 @@
 
 Data flows: `cron → poll Digitraffic → evaluate rules → insert (deduped by the database) → webhook + feed`
 
+**Running live at [freight-alerts-993855536003.us-east5.run.app](https://freight-alerts-993855536003.us-east5.run.app/health)** — polling real Finnish cargo rail every fifteen minutes.
+
+That link goes to `/health`, the only endpoint open to anyone. Everything else needs a session, and **sign-in is restricted to the owner** via `ALLOWED_LOGINS`, so a `403` from `/auth/login` is the access policy working rather than a broken deployment. The alert feed is personal data — one user's watch rules — so there is nothing to see there anyway; what the deployment demonstrates is that the scheduled write path runs continuously on free compute, which `/health` and this repository's Actions history both attest to.
+
+A representative pair of consecutive runs, against the same 21 live trains:
+
+```
+poll complete  trains:21  rules:1  alerts:3     ← three trains ≥10 min late
+poll complete  trains:21  rules:1  alerts:0     ← same trains, still late, silence
+```
+
+That second line is the whole project. See [The Problem Worth Solving](#the-problem-worth-solving).
+
 ---
 
 ## The Problem Worth Solving
@@ -155,9 +168,16 @@ Sign-in needs a GitHub OAuth app (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `G
 
 | Host | Cost | Caveat |
 |---|---|---|
-| **Google Cloud Run** | Free tier, scales to zero | ~1s cold start; needs a GCP billing account attached |
+| **Google Cloud Run** ← in use | Free tier, scales to zero | ~1s cold start; needs a GCP billing account attached |
 | Fly.io / Railway | ~$5/mo | Always warm, no compromise |
 | Render free tier | Free | Spins down; ~30s cold start on the demo |
+
+Two things the live deployment settled that were not obvious in advance:
+
+- **The liveness route is `/health`, not `/healthz`.** Google Frontend reserves the "-z page" names — `/healthz`, `/statusz`, `/varz` — and answers them before the request reaches the container. The symptom is a Google-branded 404 with no request-log entry, indistinguishable from a failed deploy. Every test passed the whole time; no handler test can know what a CDN in front of it reserves.
+- **Put the region near Postgres, not near Digitraffic.** The API never calls Digitraffic — only the poller does, and that runs on GitHub Actions runners. Both the API and the runners talk to the database, so `us-east5` beside Neon's `us-east-2` is right and a Helsinki region would have been backwards.
+
+[`DEPLOY.md`](DEPLOY.md) is the full runbook: database, host, OAuth app, in the order they have to happen.
 
 The API is stateless and reads `PORT`. A `Dockerfile` is included — multi-stage,
 static binary on distroless, running unprivileged, 21 MB:
@@ -202,6 +222,14 @@ Verified end to end against live data before shipping: 23 real cargo trains, **1
 [`flutter-freight-corridor`](https://github.com/calemccammon/flutter-freight-corridor) reads the same Digitraffic APIs and renders them — but it is read-only, and its watchlist lives in device-local `shared_preferences` that evaporates on reinstall.
 
 This is the other half: the write path. Accounts, persistence, transactional inserts under concurrency, background work. It's what turns that watchlist from a device setting into something with an owner, a server, and a history.
+
+**The two are connected.** The Flutter app's *Settings → Alerts service* registers its watchlist here over a device token, and a poll then evaluates those rules server-side:
+
+```
+poll complete  trains:18  rules:4  alerts:1
+```
+
+Three of those rules arrived from the phone; the fourth was created through the API directly. One mapping is easy to get wrong and is pinned by a test on the client side: a local watch id is `trainNumber/departureDate`, but a server rule keys on **the number alone** — so pinning the same train on two dates collapses to one rule. Watching a train means watching it every day it runs, which is what someone pinning a freight service actually wants.
 
 ---
 
