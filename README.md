@@ -99,6 +99,7 @@ Three surfaces, each handled deliberately.
 | `GET` | `/auth/callback` | complete sign-in, set session |
 | `POST` | `/auth/logout` | delete session server-side |
 | `GET` | `/api/me` | current user |
+| `POST` | `/api/tokens` | mint a device token for a native client (shown once) |
 | `GET` | `/api/rules` | your rules |
 | `POST` | `/api/rules` | create a rule |
 | `DELETE` | `/api/rules/{id}` | delete a rule (yours only — another id is a 404, never a deletion) |
@@ -115,6 +116,8 @@ Three surfaces, each handled deliberately.
 ```
 
 A rule re-submitted identically returns the existing one rather than creating a second subscription that would double every future alert.
+
+**Two transports, one credential.** Browsers carry the session in a cookie; native clients send the same token as `Authorization: Bearer …`. A device token is a session row like any other — hashed identically, expiring identically, revoked identically — so there is no second credential concept to secure.
 
 ---
 
@@ -161,10 +164,11 @@ docker run -p 8080:8080 -e DATABASE_URL=... freight-alerts        # serve
 docker run -e DATABASE_URL=... freight-alerts poll                # one cycle
 ```
 
-**Nothing is deployed yet.** Deploying needs three things that live in your
-accounts, not this repo: a Postgres URL, a GitHub OAuth app whose callback
-points at the running API, and a host. Until then the poll workflow detects the
-missing secret and skips cleanly rather than failing every 15 minutes.
+**Nothing is deployed yet.** [`DEPLOY.md`](DEPLOY.md) is the runbook: database,
+host, OAuth app, in that order — the OAuth callback needs a URL that only exists
+once the API is running. The poller works after the database step alone; until
+then the scheduled workflow detects the missing secret and skips cleanly rather
+than failing every 15 minutes.
 
 ---
 

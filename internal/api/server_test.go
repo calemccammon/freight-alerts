@@ -429,3 +429,113 @@ func TestTheAlertFeedCarriesDataAttribution(t *testing.T) {
 		}
 	}
 }
+
+// ── Device tokens (native clients) ────────────────────────────────────────────
+
+// bearer returns a request authenticated with a bearer token instead of a cookie.
+func bearer(t *testing.T, fs *fakeStore, method, path, body string) *http.Request {
+	t.Helper()
+	token, hash, err := auth.NewToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	fs.sessions[key(hash)] = 1
+
+	var r *http.Request
+	if body == "" {
+		r = httptest.NewRequest(method, path, nil)
+	} else {
+		r = httptest.NewRequest(method, path, strings.NewReader(body))
+	}
+	r.Header.Set("Authorization", "Bearer "+token)
+	return r
+}
+
+func TestABearerTokenAuthenticatesLikeACookie(t *testing.T) {
+	// A native client has no cookie jar and no browser to redirect, so the same
+	// credential has to work as a bearer.
+	_, fs, h := testServer(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, bearer(t, fs, http.MethodGet, "/api/me", ""))
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestABogusBearerTokenIsRejected(t *testing.T) {
+	_, _, h := testServer(t)
+	r := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	r.Header.Set("Authorization", "Bearer not-a-real-token")
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}
+
+func TestANonBearerAuthorizationHeaderIsIgnored(t *testing.T) {
+	_, _, h := testServer(t)
+	r := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	r.Header.Set("Authorization", "Basic dXNlcjpwYXNz")
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401 — Basic auth is not a scheme this API accepts", rec.Code)
+	}
+}
+
+func TestIssuingADeviceTokenReturnsItOnce(t *testing.T) {
+	_, fs, h := testServer(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, signedIn(t, fs, http.MethodPost, "/api/tokens", ""))
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want 201: %s", rec.Code, rec.Body)
+	}
+	var got struct {
+		Token     string `json:"token"`
+		ExpiresAt string `json:"expires_at"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if got.Token == "" || got.ExpiresAt == "" {
+		t.Fatalf("response = %s, want a token and an expiry", rec.Body)
+	}
+	// Only the hash is retained, which is why it can never be shown again.
+	for stored := range fs.sessions {
+		if stored == got.Token {
+			t.Fatal("the plaintext device token was stored")
+		}
+	}
+}
+
+func TestAnIssuedDeviceTokenActuallyWorks(t *testing.T) {
+	_, fs, h := testServer(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, signedIn(t, fs, http.MethodPost, "/api/tokens", ""))
+
+	var got struct {
+		Token string `json:"token"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+
+	r := httptest.NewRequest(http.MethodGet, "/api/me", nil)
+	r.Header.Set("Authorization", "Bearer "+got.Token)
+	rec2 := httptest.NewRecorder()
+	h.ServeHTTP(rec2, r)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("the issued token did not authenticate: %d %s", rec2.Code, rec2.Body)
+	}
+}
+
+func TestIssuingATokenRequiresBeingSignedIn(t *testing.T) {
+	_, _, h := testServer(t)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/tokens", nil))
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401", rec.Code)
+	}
+}

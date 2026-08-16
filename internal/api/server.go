@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/calemccammon/freight-alerts/internal/auth"
@@ -52,6 +53,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /auth/logout", s.logout)
 
 	mux.Handle("GET /api/me", s.requireUser(s.me))
+	mux.Handle("POST /api/tokens", s.requireUser(s.createToken))
 	mux.Handle("GET /api/rules", s.requireUser(s.listRules))
 	mux.Handle("POST /api/rules", s.requireUser(s.createRule))
 	mux.Handle("DELETE /api/rules/{id}", s.requireUser(s.deleteRule))
@@ -80,18 +82,36 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 	writeJSON(w, status, map[string]string{"error": msg})
 }
 
-// requireUser resolves the session cookie and rejects anything without one.
+// credentialFrom pulls the session token from either transport.
+//
+// A browser sends it as a cookie; a native client -- the Flutter app -- sends it
+// as a bearer token, because cookie jars and OAuth redirects are a poor fit
+// outside a browser. Both carry the *same* kind of token and resolve through the
+// same table, so there is no second credential concept to secure.
+func credentialFrom(r *http.Request) string {
+	if header := r.Header.Get("Authorization"); header != "" {
+		if after, ok := strings.CutPrefix(header, "Bearer "); ok {
+			return strings.TrimSpace(after)
+		}
+	}
+	if cookie, err := r.Cookie(auth.SessionCookie); err == nil {
+		return cookie.Value
+	}
+	return ""
+}
+
+// requireUser resolves the session credential and rejects anything without one.
 //
 // The cookie holds the raw token; the database holds only its hash, so the
 // lookup hashes first and a stolen database cannot be replayed as a session.
 func (s *Server) requireUser(next func(http.ResponseWriter, *http.Request, store.User)) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie, err := r.Cookie(auth.SessionCookie)
-		if err != nil || cookie.Value == "" {
-			writeError(w, http.StatusUnauthorized, "sign in at /auth/login")
+		token := credentialFrom(r)
+		if token == "" {
+			writeError(w, http.StatusUnauthorized, "sign in at /auth/login, or send a device token as a bearer")
 			return
 		}
-		user, err := s.store.UserBySession(r.Context(), auth.HashToken(cookie.Value))
+		user, err := s.store.UserBySession(r.Context(), auth.HashToken(token))
 		if err != nil {
 			// An expired session is indistinguishable from a forged one here,
 			// which is the point: both are simply not signed in.
@@ -182,6 +202,33 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) me(w http.ResponseWriter, r *http.Request, u store.User) {
 	writeJSON(w, http.StatusOK, map[string]any{"id": u.ID, "login": u.Login})
+}
+
+// createToken mints a device token for a non-browser client.
+//
+// It is deliberately not a new kind of credential: a device token is a session
+// row like any other, hashed the same way and revoked the same way. The only
+// differences are that it is returned in the body instead of a cookie, and that
+// the plaintext is shown exactly once -- the server keeps only the hash, so it
+// could not show it again even if asked.
+func (s *Server) createToken(w http.ResponseWriter, r *http.Request, u store.User) {
+	token, hash, err := auth.NewToken()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create token")
+		return
+	}
+	expires := time.Now().Add(auth.SessionTTL)
+	if err := s.store.CreateSession(r.Context(), u.ID, hash, expires); err != nil {
+		s.log.Error("create device token", "err", err)
+		writeError(w, http.StatusInternalServerError, "could not create token")
+		return
+	}
+	s.log.Info("device token issued", "user", u.ID)
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"token":      token,
+		"expires_at": expires.UTC().Format(time.RFC3339),
+		"note":       "Shown once. Send it as: Authorization: Bearer <token>",
+	})
 }
 
 type ruleRequest struct {
