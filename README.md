@@ -152,7 +152,19 @@ Sign-in needs a GitHub OAuth app (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `G
 | Fly.io / Railway | ~$5/mo | Always warm, no compromise |
 | Render free tier | Free | Spins down; ~30s cold start on the demo |
 
-The API is stateless and reads `PORT`, so any of them is a container away.
+The API is stateless and reads `PORT`. A `Dockerfile` is included — multi-stage,
+static binary on distroless, running unprivileged, 21 MB:
+
+```bash
+docker build -t freight-alerts .
+docker run -p 8080:8080 -e DATABASE_URL=... freight-alerts        # serve
+docker run -e DATABASE_URL=... freight-alerts poll                # one cycle
+```
+
+**Nothing is deployed yet.** Deploying needs three things that live in your
+accounts, not this repo: a Postgres URL, a GitHub OAuth app whose callback
+points at the running API, and a host. Until then the poll workflow detects the
+missing secret and skips cleanly rather than failing every 15 minutes.
 
 ---
 

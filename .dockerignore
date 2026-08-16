@@ -1,0 +1,6 @@
+.git
+.github
+*_test.go
+README.md
+AGENTS.md
+CLAUDE.md
