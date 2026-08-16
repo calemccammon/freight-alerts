@@ -78,6 +78,8 @@ Environment:
   GITHUB_REDIRECT_URL    serve: callback URL registered with the OAuth app
   ALLOWED_LOGINS         serve: comma-separated GitHub logins permitted to
                          sign in; unset means any GitHub account may
+  CORS_ORIGINS           serve: comma-separated browser origins allowed to
+                         call the API cross-origin; unset means none
   INSECURE_COOKIES       serve: set to 1 for local http development
 `)
 }
@@ -185,8 +187,16 @@ func runServe(ctx context.Context, log *slog.Logger) error {
 		log.Info("sign-in restricted", "permitted_logins", allow.Size())
 	}
 
+	// Closed unless configured: only a browser client served from another
+	// origin needs this, and defaulting it open would expose the API to any
+	// page on the internet.
+	origins := api.ParseOrigins(os.Getenv("CORS_ORIGINS"))
+	if origins.Size() > 0 {
+		log.Info("cross-origin access permitted", "origins", origins.Size())
+	}
+
 	secure := os.Getenv("INSECURE_COOKIES") != "1"
-	handler := api.New(s, github, log, secure, allow).Routes()
+	handler := api.New(s, github, log, secure, allow, origins).Routes()
 
 	port := os.Getenv("PORT")
 	if port == "" {

@@ -103,7 +103,7 @@ func testServer(t *testing.T) (*Server, *fakeStore, http.Handler) {
 	t.Helper()
 	fs := newFakeStore()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	s := New(fs, auth.NewGitHub("id", "secret", "https://x.test/cb"), log, true, Allowlist{})
+	s := New(fs, auth.NewGitHub("id", "secret", "https://x.test/cb"), log, true, Allowlist{}, Origins{})
 	return s, fs, s.Routes()
 }
 
@@ -224,7 +224,7 @@ func TestLoginRedirectsToGitHubAndSetsState(t *testing.T) {
 func TestSignInIsUnavailableRatherThanBrokenWhenUnconfigured(t *testing.T) {
 	fs := newFakeStore()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	h := New(fs, auth.NewGitHub("", "", ""), log, true, Allowlist{}).Routes()
+	h := New(fs, auth.NewGitHub("", "", ""), log, true, Allowlist{}, Origins{}).Routes()
 
 	rec := httptest.NewRecorder()
 	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/auth/login", nil))

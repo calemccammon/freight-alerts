@@ -139,6 +139,8 @@ go test ./...            # store tests skip without DATABASE_URL
 
 Sign-in needs a GitHub OAuth app (`GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_REDIRECT_URL`). Without them the service still runs — the poller doesn't need OAuth — and `/auth/login` returns a clear 503 instead of a broken redirect. Set `INSECURE_COOKIES=1` for local http.
 
+`CORS_ORIGINS` is a comma-separated list of browser origins allowed to call the API cross-origin — needed by the Flutter web build, which is served from a different host. **Unset means none**, the opposite default to `ALLOWED_LOGINS`: an open allowlist only widens who may sign in and is warned about at startup, whereas an open CORS policy would let any page on the internet make requests from a visitor's browser. The permitted origin is echoed back rather than wildcarded, and `Access-Control-Allow-Credentials` is never set — so browsers won't send the session cookie cross-origin and a cross-origin client must use a bearer token. That is what makes a mistakenly listed origin an information-disclosure risk rather than a CSRF one: there is no ambient credential to forge with.
+
 `ALLOWED_LOGINS` restricts who may sign in — a comma-separated list of GitHub logins, compared case-insensitively. **Unset means open**, so a fresh clone runs without configuration; a public deployment should set it. The check sits in the OAuth callback rather than in each handler, which is sufficient because every authenticated route requires a session and a session is only ever minted there. `serve` logs which mode it started in, so an unset variable is visible immediately rather than discovered later from an unexpected user row.
 
 ---

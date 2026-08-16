@@ -92,7 +92,7 @@ func callbackAs(t *testing.T, allow Allowlist, login string) (*httptest.Response
 	t.Helper()
 	fs := newFakeStore()
 	log := slog.New(slog.NewTextHandler(io.Discard, nil))
-	h := New(fs, fakeOAuth{login: login}, log, false, allow).Routes()
+	h := New(fs, fakeOAuth{login: login}, log, false, allow, Origins{}).Routes()
 
 	// The callback verifies state against a cookie, so mint a matching pair.
 	stateRec := httptest.NewRecorder()

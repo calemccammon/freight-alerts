@@ -52,10 +52,12 @@ type Server struct {
 	// session is only ever created in callback, so this one check is the whole
 	// of the access policy rather than something each handler repeats.
 	allow Allowlist
+	// origins gates cross-origin browser access; empty means same-origin only.
+	origins Origins
 }
 
-func New(s Store, gh OAuth, log *slog.Logger, secure bool, allow Allowlist) *Server {
-	return &Server{store: s, github: gh, log: log, secure: secure, allow: allow}
+func New(s Store, gh OAuth, log *slog.Logger, secure bool, allow Allowlist, origins Origins) *Server {
+	return &Server{store: s, github: gh, log: log, secure: secure, allow: allow, origins: origins}
 }
 
 func (s *Server) Routes() http.Handler {
@@ -79,7 +81,9 @@ func (s *Server) Routes() http.Handler {
 	mux.Handle("DELETE /api/rules/{id}", s.requireUser(s.deleteRule))
 	mux.Handle("GET /api/alerts", s.requireUser(s.listAlerts))
 
-	return mux
+	// Outermost, so preflight is answered before routing: the mux has no
+	// OPTIONS patterns and would otherwise return 405.
+	return s.withCORS(mux)
 }
 
 // ── Plumbing ──────────────────────────────────────────────────────────────────
