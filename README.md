@@ -94,7 +94,7 @@ Three surfaces, each handled deliberately.
 
 | Method | Path | |
 |---|---|---|
-| `GET` | `/healthz` | liveness |
+| `GET` | `/health` | liveness |
 | `GET` | `/auth/login` | redirect to GitHub |
 | `GET` | `/auth/callback` | complete sign-in, set session |
 | `POST` | `/auth/logout` | delete session server-side |

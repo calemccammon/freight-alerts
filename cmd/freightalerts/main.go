@@ -170,7 +170,7 @@ func runServe(ctx context.Context, log *slog.Logger) error {
 	)
 	if !github.Configured() {
 		// Not fatal: the poller does not need OAuth, and a deployment without
-		// it should still serve /healthz and return a clear 503 on sign-in
+		// it should still serve /health and return a clear 503 on sign-in
 		// rather than a broken redirect.
 		log.Warn("GitHub OAuth is not configured; sign-in will return 503")
 	}

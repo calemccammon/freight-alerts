@@ -100,7 +100,7 @@ Note the service URL it prints. That is your `GITHUB_REDIRECT_URL` base.
 | Fly.io / Railway | ~$5/mo | Always warm, no cold start |
 | Render free tier | Free | Spins down; ~30s cold start on the demo |
 
-**Verify:** `curl https://<your-host>/healthz` returns `{"status":"ok"}`.
+**Verify:** `curl https://<your-host>/health` returns `{"status":"ok"}`.
 
 ---
 

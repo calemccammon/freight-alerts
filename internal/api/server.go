@@ -61,7 +61,13 @@ func New(s Store, gh OAuth, log *slog.Logger, secure bool, allow Allowlist) *Ser
 func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 
-	mux.HandleFunc("GET /healthz", s.health)
+	// /health, not /healthz. Google Frontend reserves the "-z page" names
+	// (/healthz, /statusz, /varz) from Google's own internal conventions and
+	// answers them itself, so a container behind Cloud Run never sees the
+	// request -- it returns a Google-branded 404 that looks exactly like a
+	// broken deployment. Verified against the deployed service: /health and
+	// /healthz2 arrive, /healthz and /varz do not.
+	mux.HandleFunc("GET /health", s.health)
 	mux.HandleFunc("GET /auth/login", s.login)
 	mux.HandleFunc("GET /auth/callback", s.callback)
 	mux.HandleFunc("POST /auth/logout", s.logout)

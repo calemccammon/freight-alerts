@@ -128,10 +128,10 @@ func signedIn(t *testing.T, fs *fakeStore, method, path, body string) *http.Requ
 
 // ── Health ────────────────────────────────────────────────────────────────────
 
-func TestHealthzNeedsNoSession(t *testing.T) {
+func TestHealthNeedsNoSession(t *testing.T) {
 	_, _, h := testServer(t)
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}

@@ -55,6 +55,17 @@ Each of those is a named test in `internal/store/store_test.go`.
   seam. An exported setter would be a way to send client credentials to another
   host, in exchange for nothing.
 
+## Deployment gotcha
+
+The liveness route is **`/health`, never `/healthz`**. Google Frontend reserves
+the "-z page" names from Google's own internal conventions — `/healthz`,
+`/statusz`, `/varz` — and answers them itself, so a container behind Cloud Run
+never receives the request. The symptom is a Google-branded 404 with no
+`server: Google Frontend` header and no entry in the request log, which looks
+exactly like a failed deployment. Measured against the live service: `/health`,
+`/healthcheck` and `/healthz2` reach the app; `/healthz`, `/statusz` and `/varz`
+do not.
+
 ## Data licence
 
 Train data is Fintraffic Digitraffic under CC BY 4.0. Attribution is required and
