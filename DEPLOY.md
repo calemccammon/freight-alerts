@@ -176,8 +176,9 @@ curl -X POST https://<your-host>/api/tokens -b 'fa_session=<session cookie>'
 { "token": "…", "expires_at": "…", "note": "Shown once. Send it as: Authorization: Bearer <token>" }
 ```
 
-It is a session row like any other — same hashing, same expiry, revoked the same
-way. The plaintext is shown exactly once because the server keeps only the hash.
+It is a session row like any other, with the same hashing and the same expiry.
+`POST /auth/logout` with the token as `Authorization: Bearer <token>` deletes it.
+The plaintext is shown exactly once because the server keeps only the hash.
 
 ---
 
@@ -186,7 +187,9 @@ way. The plaintext is shown exactly once because the server keeps only the hash.
 - **Database URL:** rotate in Neon, update the repo secret and the host's env.
 - **OAuth secret:** regenerate on GitHub, update the host's env. Existing sessions
   survive — they don't depend on it.
-- **A leaked device token:** delete its row.
+- **A leaked device token:** if you still have the plaintext, revoke it with
+  `curl -X POST https://<your-host>/auth/logout -H 'Authorization: Bearer <token>'`.
+  Otherwise delete its row.
   `DELETE FROM sessions WHERE token_hash = decode('<sha256 hex>', 'hex');`
   You can't look the token up by its plaintext — that is the point — so if you
   don't know which row it is, `DELETE FROM sessions WHERE user_id = <id>` revokes

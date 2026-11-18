@@ -19,10 +19,7 @@ import (
 	"time"
 )
 
-const (
-	timeout     = 8 * time.Second
-	maxBodyEcho = 200
-)
+const timeout = 8 * time.Second
 
 // Validate rejects a webhook URL at the point a rule is created, so a bad one
 // is a 400 the user sees rather than a failure buried in a poll log.

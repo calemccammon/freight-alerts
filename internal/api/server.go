@@ -136,11 +136,18 @@ func (s *Server) requireUser(next func(http.ResponseWriter, *http.Request, store
 			return
 		}
 		user, err := s.store.UserBySession(r.Context(), auth.HashToken(token))
-		if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
 			// An expired session is indistinguishable from a forged one here,
 			// which is the point: both are simply not signed in.
 			auth.ClearSessionCookie(w, s.secure)
 			writeError(w, http.StatusUnauthorized, "session expired; sign in again")
+			return
+		}
+		if err != nil {
+			// A store failure says nothing about the session, so the cookie is
+			// left alone and the caller can retry.
+			s.log.Error("resolve session", "err", err)
+			writeError(w, http.StatusInternalServerError, "could not verify session")
 			return
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), userKey, user)), user)
@@ -228,10 +235,22 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	if cookie, err := r.Cookie(auth.SessionCookie); err == nil && cookie.Value != "" {
+	// Both transports are revoked: a device token sent as a bearer is a session
+	// row like the cookie's, and logout is the only way a client can end it.
+	var tokens []string
+	if after, ok := strings.CutPrefix(r.Header.Get("Authorization"), "Bearer "); ok {
+		tokens = append(tokens, strings.TrimSpace(after))
+	}
+	if cookie, err := r.Cookie(auth.SessionCookie); err == nil {
+		tokens = append(tokens, cookie.Value)
+	}
+	for _, token := range tokens {
+		if token == "" {
+			continue
+		}
 		// Deleted server-side too: clearing the cookie alone would leave a
 		// working token in anyone's hands who had already copied it.
-		if err := s.store.DeleteSession(r.Context(), auth.HashToken(cookie.Value)); err != nil {
+		if err := s.store.DeleteSession(r.Context(), auth.HashToken(token)); err != nil {
 			s.log.Warn("delete session", "err", err)
 		}
 	}

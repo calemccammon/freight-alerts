@@ -11,11 +11,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-# CGO off keeps the binary static so it runs on a distroless base. The version
-# stamp makes a running container traceable to a commit.
-ARG VERSION=dev
+# CGO off keeps the binary static so it runs on a distroless base.
 RUN CGO_ENABLED=0 GOOS=linux go build \
-      -ldflags="-s -w -X main.version=${VERSION}" \
+      -ldflags="-s -w" \
       -o /out/freightalerts ./cmd/freightalerts
 
 FROM gcr.io/distroless/static-debian12:nonroot
