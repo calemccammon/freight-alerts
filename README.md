@@ -112,7 +112,7 @@ The code is organised by package:
 | `GET` | `/health` | liveness, no session required |
 | `GET` | `/auth/login` | redirect to GitHub |
 | `GET` | `/auth/callback` | complete sign-in, set the session cookie |
-| `POST` | `/auth/logout` | delete the cookie's session row and clear the cookie |
+| `POST` | `/auth/logout` | delete the session row for the cookie and for a bearer token, and clear the cookie |
 | `GET` | `/api/me` | current user |
 | `POST` | `/api/tokens` | mint a bearer token for a non-browser client. The plaintext is returned once. |
 | `GET` | `/api/rules` | the caller's rules |
@@ -172,7 +172,7 @@ The transport sets no proxy, so the dial-time check sees the real destination.
 
 - A session token is 32 random bytes. The database stores only its SHA-256, so a copy of the `sessions` table does not contain usable tokens. The hash is unsalted and fast because the input is already high-entropy.
 - The session cookie is `HttpOnly`, `SameSite=Lax` and `Secure` unless `INSECURE_COOKIES=1`.
-- Logout deletes the session row as well as clearing the cookie.
+- Logout deletes the session row as well as clearing the cookie. A bearer token sent to `POST /auth/logout` is deleted the same way.
 - The OAuth `state` value is generated per sign-in attempt, held in a 10-minute `HttpOnly` cookie, compared in constant time on callback, and the cookie is cleared whether or not the comparison succeeds.
 - The authorization request asks for no scopes. The service reads the user's id and login and receives no access to the account.
 - The OAuth flow is written directly against `net/http` in `internal/auth/github.go`. For one provider it is two requests.
@@ -215,14 +215,14 @@ Two things learned from the deployment:
 
 ## Tests
 
-There are 141 test functions across seven packages. None of them calls an external service.
+There are 144 test functions across seven packages. None of them calls an external service.
 
 | Package | Tests | What they run against |
 |---|---|---|
 | `internal/rules` | 23 | Pure functions |
 | `internal/store` | 21 | A real Postgres, because the behaviour under test is the schema. They skip when `DATABASE_URL` is unset. |
-| `internal/api` | 43 | In-memory fakes of the store and OAuth provider |
-| `internal/poll` | 12 | In-memory fakes of the fetcher, store and notifier |
+| `internal/api` | 45 | In-memory fakes of the store and OAuth provider |
+| `internal/poll` | 13 | In-memory fakes of the fetcher, store and notifier |
 | `internal/auth` | 20 | `httptest` servers standing in for GitHub |
 | `internal/webhook` | 12 | `httptest` servers on loopback |
 | `internal/digitraffic` | 10 | `httptest` servers standing in for Digitraffic |
@@ -237,14 +237,12 @@ The suppression tests insert the same alert twice in sequence. No test runs two 
 - Webhooks are not retried. A failed delivery is recorded on the alert and the alert stays in the feed. If the process dies between the insert and the webhook, that alert is never delivered.
 - There is no rate limiting on the API or on rule creation.
 - Notification latency is bounded by the schedule, and GitHub's cron is best-effort. In the 60 days the workflow ran, the `*/15` schedule produced 694 runs, about one every two hours.
-- A bearer token cannot be revoked through the API. `POST /auth/logout` deletes only the session in the cookie. Revoking a token means deleting its row, as described in `DEPLOY.md`.
-- Expired sessions are purged at the end of a poll cycle, and only on cycles that produced at least one candidate alert.
+- A bearer token can only be revoked by a caller that holds it. There is no endpoint that lists or revokes a user's other sessions, so revoking a lost token means deleting its row, as described in `DEPLOY.md`.
+- Expired sessions are purged by the poller, so they accumulate while the poller is not running. An expired session is rejected either way.
 - The webhook address check covers loopback, RFC 1918, link-local, multicast, unspecified and IPv6 unique-local addresses. Other reserved ranges, such as 100.64.0.0/10, are not blocked.
 - Rules cannot be paused through the API. The `active` column exists, but no endpoint sets it to false.
 
-## Licence and data attribution
-
-The code is released under the MIT licence.
+## Data attribution
 
 Train data comes from [Fintraffic Digitraffic](https://www.digitraffic.fi/en/) and is licensed under [Creative Commons Attribution 4.0 International (CC BY 4.0)](https://creativecommons.org/licenses/by/4.0/). This service modifies the data: it derives a current delay from the most recently reached timetable stop and compares it with user-defined thresholds. Alerts are a derived work.
 

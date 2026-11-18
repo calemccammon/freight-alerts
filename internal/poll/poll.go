@@ -56,20 +56,27 @@ type Result struct {
 // Run executes one cycle. Every outcome, including failure, is recorded against
 // a poll_runs row so a service that has quietly stopped alerting looks different
 // from one with nothing to report.
-func (p *Poller) Run(ctx context.Context) (Result, error) {
-	var result Result
-
+func (p *Poller) Run(ctx context.Context) (result Result, err error) {
 	runID, err := p.store.StartPollRun(ctx)
 	if err != nil {
 		return result, fmt.Errorf("start poll run: %w", err)
 	}
-	// Named return so the deferred finish records whatever actually happened.
+	// Named returns so the deferred finish records what Run actually returned.
 	defer func() {
 		if err := p.store.FinishPollRun(ctx, runID,
 			result.TrainsSeen, result.RulesEvaluated, result.AlertsCreated, err); err != nil {
 			p.log.Error("record poll run", "err", err)
 		}
 	}()
+
+	// Housekeeping rides along with the poll so there is no second scheduled
+	// job to forget about. It runs first so that a cycle with no rules or no
+	// late trains still purges.
+	if purged, err := p.store.PurgeExpiredSessions(ctx); err != nil {
+		p.log.Warn("purge sessions", "err", err)
+	} else if purged > 0 {
+		p.log.Info("purged expired sessions", "count", purged)
+	}
 
 	activeRules, err := p.store.ActiveRules(ctx)
 	if err != nil {
@@ -129,14 +136,6 @@ func (p *Poller) Run(ctx context.Context) (Result, error) {
 			alert.RuleID, alert.TrainNumber, alert.DepartureDate, status); err != nil {
 			p.log.Warn("record webhook status", "err", err)
 		}
-	}
-
-	// Housekeeping rides along with the poll so there is no second scheduled
-	// job to forget about.
-	if purged, err := p.store.PurgeExpiredSessions(ctx); err != nil {
-		p.log.Warn("purge sessions", "err", err)
-	} else if purged > 0 {
-		p.log.Info("purged expired sessions", "count", purged)
 	}
 
 	p.log.Info("poll complete",

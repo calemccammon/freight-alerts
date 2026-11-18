@@ -33,6 +33,7 @@ type fakeStore struct {
 		err                   error
 	}
 	purged     int64
+	purgeCalls int
 	failActive error
 	failInsert error
 }
@@ -76,7 +77,10 @@ func (f *fakeStore) FinishPollRun(_ context.Context, _ int64, trains, rulesEvalu
 	return nil
 }
 
-func (f *fakeStore) PurgeExpiredSessions(context.Context) (int64, error) { return f.purged, nil }
+func (f *fakeStore) PurgeExpiredSessions(context.Context) (int64, error) {
+	f.purgeCalls++
+	return f.purged, nil
+}
 
 type fakeNotifier struct {
 	sent []string
@@ -236,6 +240,26 @@ func TestAnUpstreamFailureIsRecordedOnTheRun(t *testing.T) {
 	}
 	if len(fs.runs) != 1 || fs.runs[0].err == nil {
 		t.Fatalf("poll run recorded %+v, want the error stored", fs.runs)
+	}
+	// The stored error is the one Run returned, with the step that failed.
+	if got := fs.runs[0].err.Error(); got != "fetch trains: upstream 503" {
+		t.Fatalf("recorded error = %q, want the wrapped error Run returned", got)
+	}
+}
+
+func TestExpiredSessionsArePurgedEvenWhenNothingAlerts(t *testing.T) {
+	// The purge must not depend on a train being late or a rule existing.
+	quiet := newFakeStore(operatorRule(7, 15, ""))
+	_, _ = testPoller(&fakeFetcher{trains: []rules.Train{lateTrain(3001, "vr", 2)}}, quiet, &fakeNotifier{}).
+		Run(context.Background())
+	if quiet.purgeCalls != 1 {
+		t.Fatalf("purge ran %d times on a cycle with no alerts, want 1", quiet.purgeCalls)
+	}
+
+	unwatched := newFakeStore()
+	_, _ = testPoller(&fakeFetcher{}, unwatched, &fakeNotifier{}).Run(context.Background())
+	if unwatched.purgeCalls != 1 {
+		t.Fatalf("purge ran %d times on a cycle with no rules, want 1", unwatched.purgeCalls)
 	}
 }
 

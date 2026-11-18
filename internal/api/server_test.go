@@ -54,6 +54,9 @@ func (f *fakeStore) CreateSession(_ context.Context, userID int64, hash []byte, 
 }
 
 func (f *fakeStore) UserBySession(_ context.Context, hash []byte) (store.User, error) {
+	if f.failOn == "UserBySession" {
+		return store.User{}, errors.New("boom")
+	}
 	id, ok := f.sessions[key(hash)]
 	if !ok {
 		return store.User{}, store.ErrNotFound
@@ -255,6 +258,39 @@ func TestLogoutDeletesTheSessionServerSide(t *testing.T) {
 	}
 	if len(fs.sessions) != 0 {
 		t.Fatal("the session survived logout")
+	}
+}
+
+func TestLogoutRevokesABearerToken(t *testing.T) {
+	// A device token has no cookie to clear, so deleting the row is the only
+	// thing logout can do for it.
+	_, fs, h := testServer(t)
+	r := bearer(t, fs, http.MethodPost, "/auth/logout", "")
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	if len(fs.sessions) != 0 {
+		t.Fatal("the bearer token survived logout")
+	}
+}
+
+func TestAStoreFailureDuringSessionLookupIsNotASignOut(t *testing.T) {
+	// A database outage must not be reported as an expired session, and must
+	// not clear a cookie that is still valid.
+	_, fs, h := testServer(t)
+	r := signedIn(t, fs, http.MethodGet, "/api/me", "")
+	fs.failOn = "UserBySession"
+
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, r)
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	if got := rec.Header().Get("Set-Cookie"); got != "" {
+		t.Fatalf("Set-Cookie = %q, want the session cookie left alone", got)
 	}
 }
 
